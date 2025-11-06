@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>水平时间轴日程（静态）</title>
+  <!-- Tailwind Play CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* 小幅定制 */
+    .timeline-track { height: 140px; }
+    .task-block { height: 96px; top: 22px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.08); position: absolute; }
+    .resize-handle { width: 8px; cursor: ew-resize; height: 40px; border-radius: 4px; opacity: 0.4; }
+    .time-scale { user-select: none; }
+    input.title-input { background: transparent; border: none; outline: none; color: white; width: 100%; }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+  <div class="max-w-6xl mx-auto p-6">
+    <div class="flex items-center gap-3 mb-4">
+      <button id="prevDay" class="px-3 py-1 rounded bg-gray-100">上一天</button>
+      <input id="dateInput" type="date" class="border px-2 py-1 rounded" />
+      <button id="nextDay" class="px-3 py-1 rounded bg-gray-100">下一天</button>
+      <div class="ml-auto text-sm text-gray-500">任务数量: <span id="taskCount">0</span></div>
+      <button id="exportBtn" class="ml-2 px-3 py-1 rounded bg-gray-100">导出</button>
+    </div>
+
+    <div class="border rounded overflow-auto">
+      <div class="relative p-4">
+        <!-- 时间刻度 -->
+        <div id="scaleWrapper" class="flex items-center time-scale" style="min-width:2400px;">
+        </div>
+
+        <!-- 轨道（点击创建任务） -->
+        <div id="track" class="timeline-track relative mt-6 bg-white overflow-visible" style="min-width:2400px;">
+          <!-- tasks will be appended here -->
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-4 text-sm text-gray-600">
+      使用说明：点击时间轴空白处创建默认 30 分钟任务。拖动任务本体改变开始时间，拖动左右小把手改变起/止时间。日期切换会保存到 localStorage（key=timeline:YYYY-MM-DD）。
+    </div>
+  </div>
+
+<script>
+/*
+  Plain JS horizontal timeline scheduler
+  - 24 hours, each hour = HOUR_PX px
+  - Click track to create 30-min task (15-min snap)
+  - Drag to move (pointer events)
+  - Resize left/right handles
+  - Save/load per date to localStorage
+*/
+(function(){
+  const HOUR_PX = 100; // per hour pixels
+  const DAY_PX = HOUR_PX * 24;
+  const SNAP_PX = HOUR_PX / 4; // 15 minutes
+  const MIN_WIDTH = 6; // px minimal
+
+  const palette = ["#60A5FA","#34D399","#FBBF24","#F87171","#A78BFA"];
+
+  // helpers
+  function uid(){ return Math.random().toString(36).slice(2,9); }
+  function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+  function timeToPx(t){
+    // "HH:MM"
+    const [hh, mm] = t.split(':').map(s=>parseInt(s,10));
+    return (hh + mm/60) * HOUR_PX;
+  }
+  function pxToTime(px){
+    if(px < 0) px = 0;
+    const hours = px / HOUR_PX;
+    const hh = Math.floor(hours);
+    const mm = Math.round((hours - hh) * 60);
+    return String(hh).padStart(2,'0') + ':' + String(mm).padStart(2,'0');
+  }
+
+  function snapPx(x){
+    return Math.round(x / SNAP_PX) * SNAP_PX;
+  }
+  function pickColor(){ return palette[Math.floor(Math.random()*palette.length)]; }
+
+  // DOM
+  const dateInput = document.getElementById('dateInput');
+  const prevBtn = document.getElementById('prevDay');
+  const nextBtn = document.getElementById('nextDay');
+  const exportBtn = document.getElementById('exportBtn');
+  const scaleWrapper = document.getElementById('scaleWrapper');
+  const track = document.getElementById('track');
+  const taskCount = document.getElementById('taskCount');
+
+  // init scale
+  for(let i=0;i<24;i++){
+    const div = document.createElement('div');
+    div.className = 'flex flex-col items-center';
+    div.style.width = HOUR_PX + 'px';
+    div.innerHTML = '<div class="text-xs text-gray-600">' + String(i).padStart(2,'0') + ':00</div>'
+                  + '<div class="h-6 w-full border-t border-dashed border-gray-200 mt-2"></div>';
+    scaleWrapper.appendChild(div);
+  }
+
+  // state
+  let date = (new Date()).toISOString().slice(0,10);
+  let tasks = []; // {id,title,start,end,color}
+  let dragState = null; // {type, id, startX, origStart, origEnd}
+
+  function storageKey(d){ return 'timeline:' + d; }
+
+  function loadForDate(d){
+    const raw = localStorage.getItem(storageKey(d));
+    tasks = raw ? JSON.parse(raw) : [];
+    renderTasks();
+  }
+  function saveForDate(d){
+    localStorage.setItem(storageKey(d), JSON.stringify(tasks));
+  }
+
+  // set today's date input
+  dateInput.value = date;
+  dateInput.addEventListener('change', ()=> {
+    date = dateInput.value;
+    loadForDate(date);
+  });
+
+  prevBtn.addEventListener('click', ()=>{
+    const dt = new Date(date + 'T00:00:00');
+    dt.setDate(dt.getDate() - 1);
+    date = dt.toISOString().slice(0,10);
+    dateInput.value = date;
+    loadForDate(date);
+  });
+  nextBtn.addEventListener('click', ()=>{
+    const dt = new Date(date + 'T00:00:00');
+    dt.setDate(dt.getDate() + 1);
+    date = dt.toISOString().slice(0,10);
+    dateInput.value = date;
+    loadForDate(date);
+  });
+
+  exportBtn.addEventListener('click', ()=>{
+    const blob = new Blob([JSON.stringify(tasks, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'timeline-' + date + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  // create on track click
+  track.addEventListener('click', (e)=>{
+    // ignore if clicking on a task element
+    if(e.target.closest('.task-block')) return;
+    const rect = track.getBoundingClientRect();
+    let x = e.clientX - rect.left;
+    x = clamp(x, 0, DAY_PX);
+    const snapped = snapPx(x);
+    const startPx = snapped;
+    const endPx = clamp(startPx + HOUR_PX/2, 0, DAY_PX); // 30 min default
+    const newTask = {
+      id: uid(),
+      title: '新事项',
+      start: pxToTime(startPx),
+      end: pxToTime(endPx),
+      color: pickColor()
+    };
+    tasks.push(newTask);
+    saveForDate(date);
+    renderTasks();
+  });
+
+  // rendering
+  function renderTasks(){
+    // clear track children that are task-block
+    track.querySelectorAll('.task-block').forEach(n=>n.remove());
+    tasks.forEach(t=>{
+      const left = timeToPx(t.start);
+      const right = timeToPx(t.end);
+      const width = Math.max(MIN_WIDTH, right - left);
+
+      const el = document.createElement('div');
+      el.className = 'task-block';
+      el.style.left = left + 'px';
+      el.style.width = width + 'px';
+      el.style.background = t.color;
+      el.style.position = 'absolute';
+      el.dataset.id = t.id;
+
+      // content
+      el.innerHTML = `
+        <div class="flex items-start justify-between p-2 h-full text-white">
+          <div class="text-xs font-medium max-w-xs truncate">
+            <input class="title-input" value="${escapeHtml(t.title)}" />
+            <div class="text-[10px] opacity-80">${t.start} - ${t.end}</div>
+          </div>
+          <div class="flex flex-col items-end gap-1 ml-2">
+            <div class="flex gap-1 items-center">
+              <div class="resize-left resize-handle" title="调整开始"></div>
+              <div class="resize-right resize-handle" title="调整结束"></div>
+            </div>
+            <button class="text-white text-xs bg-black/20 px-2 rounded del-btn">删除</button>
+          </div>
+        </div>
+      `;
+      // append
+      track.appendChild(el);
+
+      // wire up title edit
+      const input = el.querySelector('.title-input');
+      input.addEventListener('input', (ev)=>{
+        const v = ev.target.value;
+        const idx = tasks.findIndex(x=>x.id===t.id);
+        if(idx>=0){ tasks[idx].title = v; saveForDate(date); }
+      });
+
+      // delete
+      const delBtn = el.querySelector('.del-btn');
+      delBtn.addEventListener('click', (ev)=>{
+        ev.stopPropagation();
+        tasks = tasks.filter(x=>x.id!==t.id);
+        saveForDate(date);
+        renderTasks();
+      });
+
+      // pointer events for move and resize
+      // move (on pointerdown on block but ignore handles)
+      el.addEventListener('pointerdown', (ev)=>{
+        if(ev.target.classList.contains('resize-left') || ev.target.classList.contains('resize-right') || ev.target.classList.contains('del-btn') || ev.target.closest('input')) {
+          // handled elsewhere
+          return;
+        }
+        ev.preventDefault();
+        const rect = track.getBoundingClientRect();
+        const startX = ev.clientX - rect.left;
+        dragState = {
+          type: 'move',
+          id: t.id,
+          startX,
+          origStart: timeToPx(t.start),
+          origEnd: timeToPx(t.end)
+        };
+        ev.target.setPointerCapture && ev.target.setPointerCapture(ev.pointerId);
+      });
+
+      // resize left
+      const leftHandle = el.querySelector('.resize-left');
+      leftHandle.addEventListener('pointerdown', (ev)=>{
+        ev.preventDefault();
+        const rect = track.getBoundingClientRect();
+        const startX = ev.clientX - rect.left;
+        dragState = {
+          type: 'resize-left',
+          id: t.id,
+          startX,
+          origStart: timeToPx(t.start),
+          origEnd: timeToPx(t.end)
+        };
+        ev.target.setPointerCapture && ev.target.setPointerCapture(ev.pointerId);
+      });
+      // resize right
+      const rightHandle = el.querySelector('.resize-right');
+      rightHandle.addEventListener('pointerdown', (ev)=>{
+        ev.preventDefault();
+        const rect = track.getBoundingClientRect();
+        const startX = ev.clientX - rect.left;
+        dragState = {
+          type: 'resize-right',
+          id: t.id,
+          startX,
+          origStart: timeToPx(t.start),
+          origEnd: timeToPx(t.end)
+        };
+        ev.target.setPointerCapture && ev.target.setPointerCapture(ev.pointerId);
+      });
+    });
+
+    taskCount.textContent = tasks.length;
+  }
+
+  // global pointermove/up on track
+  track.addEventListener('pointermove', (ev)=>{
+    if(!dragState) return;
+    ev.preventDefault();
+    const rect = track.getBoundingClientRect();
+    const x = ev.clientX - rect.left;
+    const d = dragState;
+    if(d.type === 'move'){
+      let newStart = clamp(d.origStart + (x - d.startX), 0, DAY_PX - 5);
+      let newEnd = clamp(d.origEnd + (x - d.startX), newStart + 5, DAY_PX);
+      newStart = snapPx(newStart); newEnd = snapPx(newEnd);
+      tasks = tasks.map(it => it.id === d.id ? {...it, start: pxToTime(newStart), end: pxToTime(newEnd)} : it);
+      renderTasks();
+    } else if(d.type === 'resize-left'){
+      let newStart = clamp(d.origStart + (x - d.startX), 0, d.origEnd - 5);
+      newStart = snapPx(newStart);
+      tasks = tasks.map(it => it.id === d.id ? {...it, start: pxToTime(newStart)} : it);
+      renderTasks();
+    } else if(d.type === 'resize-right'){
+      let newEnd = clamp(d.origEnd + (x - d.startX), d.origStart + 5, DAY_PX);
+      newEnd = snapPx(newEnd);
+      tasks = tasks.map(it => it.id === d.id ? {...it, end: pxToTime(newEnd)} : it);
+      renderTasks();
+    }
+  });
+  track.addEventListener('pointerup', (ev)=>{
+    if(!dragState) return;
+    saveForDate(date);
+    dragState = null;
+  });
+  track.addEventListener('pointercancel', (ev)=>{
+    if(!dragState) return;
+    saveForDate(date);
+    dragState = null;
+  });
+
+  // utility escape
+  function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+
+  // initial load
+  loadForDate(date);
+
+})();
+</script>
+</body>
+</html>
