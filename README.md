@@ -1,7 +1,14 @@
 # Slideable-calendar
 &ensp;This project aims to provide a swipeable schedule note-taking software for recording tasks and to-dos completed in each time period of the day. It features parallel scheduling capabilities, supports time accuracy down to the minute, cross-date scheduling, and allows users to add notes by name.  
+
 &emsp;本项目旨在提供一款可滑动操作的日程安排笔记软件，用于记录一天中各个时间段完成的任务和待办事项。它具备并行日程安排功能，支持精确到分钟的时间设置、跨日期日程安排，并允许用户按名称添加笔记。  
 
+  
+<div style="text-align: center;">
+  <img src="https://github.com/user-attachments/assets/d4498a97-c07a-4389-b478-c5f4a0fea37a" alt="image" width="800"/>
+</div>
+
+  
 &ensp;Project Background:   
 &ensp;Due to my lack of planning in my work, colleagues often put aside their current tasks to address new requirements, resulting in none of the tasks being completed. I hope to have a draggable timeline for scheduling events. Although this feature already exists in mobile calendars, I don't want to constantly adjust things on my phone. I want to implement this feature on my computer, allowing me to schedule my tasks into a daily timeline.  
   
