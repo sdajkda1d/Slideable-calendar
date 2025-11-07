@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>水平日程表（实时红线 + 自由调整）</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  .timeline-track { position: relative; height: 120px; user-select: none; }
+  .task-block {
+    position: absolute; height: 80px; border-radius: 0.5rem;
+    padding: 4px; box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+    cursor: grab; display: flex; flex-direction: column;
+    justify-content: space-between; color: white; font-size: 0.9rem;
+  }
+  .resize-left, .resize-right {
+    position: absolute; top: 0; width: 8px; height: 100%;
+    background: rgba(255,255,255,0.5); cursor: ew-resize;
+  }
+  .resize-left { left: 0; border-top-left-radius: 0.5rem; border-bottom-left-radius: 0.5rem; }
+  .resize-right { right: 0; border-top-right-radius: 0.5rem; border-bottom-right-radius: 0.5rem; }
+  .now-line {
+    position: absolute; top: 0; bottom: 0; width: 2px;
+    background: red; z-index: 5; pointer-events: none; /* ✅ 不影响点击事件 */
+  }
+</style>
+</head>
+<body class="p-4 bg-gray-100">
+
+<div class="flex items-center justify-between mb-2">
+  <div class="space-x-2">
+    <button id="prevDay" class="px-3 py-1 bg-gray-300 rounded">← 前一天</button>
+    <button id="nextDay" class="px-3 py-1 bg-gray-300 rounded">后一天 →</button>
+  </div>
+  <div>
+    日期：<input type="date" id="datePicker" class="border rounded p-1">
+    <button id="exportBtn" class="ml-2 px-3 py-1 bg-blue-500 text-white rounded">导出 JSON</button>
+    <span class="ml-4 text-gray-500">任务数: <span id="taskCount">0</span></span>
+  </div>
+</div>
+
+<div class="border rounded overflow-auto">
+  <div class="relative p-4">
+    <div id="scaleWrapper" class="absolute left-0 top-0 right-0 h-6 border-b border-gray-300 flex"></div>
+    <div id="track" class="timeline-track mt-8 bg-white rounded"></div>
+  </div>
+</div>
+
+<script>
+const track = document.getElementById('track');
+const scaleWrapper = document.getElementById('scaleWrapper');
+const datePicker = document.getElementById('datePicker');
+const taskCount = document.getElementById('taskCount');
+const exportBtn = document.getElementById('exportBtn');
+
+const HOUR_PX = 100;
+const MIN_WIDTH = 10;
+const palette = ["#60A5FA","#34D399","#FBBF24","#F87171","#A78BFA"];
+
+let tasks = [];
+let date = new Date().toISOString().slice(0,10);
+let dragState = null;
+
+// ✅ 红线初始化
+let nowLine = document.createElement('div');
+nowLine.className = 'now-line';
+track.appendChild(nowLine);
+nowLine.style.display = 'block';
+
+datePicker.value = date;
+
+// 绘制刻度
+for(let i=0;i<24;i++){
+  const div=document.createElement('div');
+  div.className='text-xs text-gray-600 flex-none';
+  div.style.width=HOUR_PX+'px';
+  div.textContent=(i<10?'0'+i:i)+':00';
+  scaleWrapper.appendChild(div);
+}
+
+// 工具函数
+const timeToPx = t=>{
+  const [h,m]=t.split(':').map(Number);
+  return (h*60+m)/60*HOUR_PX;
+};
+const pxToTime = px=>{
+  const totalMin = px / HOUR_PX * 60;
+  const h = Math.floor(totalMin / 60);
+  const m = Math.round(totalMin % 60);
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+};
+const escapeHtml = s=>s.replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// 存储
+const storageKey = d=>'timeline:'+d;
+const saveForDate = d=>{
+  localStorage.setItem(storageKey(d), JSON.stringify(tasks));
+};
+const loadForDate = d=>{
+  const raw = localStorage.getItem(storageKey(d));
+  tasks = raw ? JSON.parse(raw) : [];
+  renderTasks();
+};
+
+// 渲染任务
+function renderTasks(){
+  track.querySelectorAll('.task-block').forEach(n=>n.remove());
+  tasks.sort((a,b)=>timeToPx(a.start)-timeToPx(b.start));
+
+  const lanes=[]; 
+  const LANE_HEIGHT=110; 
+  const BASE_TOP=22;
+
+  tasks.forEach(t=>{
+    const left=timeToPx(t.start);
+    const right=timeToPx(t.end);
+    const width=Math.max(MIN_WIDTH,right-left);
+
+    let laneIndex=lanes.findIndex(endPx=>left>=endPx+4);
+    if(laneIndex===-1){
+      laneIndex=lanes.length; lanes.push(right);
+    }else{
+      lanes[laneIndex]=right;
+    }
+
+    const el=document.createElement('div');
+    el.className='task-block';
+    el.style.left=left+'px';
+    el.style.width=width+'px';
+    el.style.top=(BASE_TOP+laneIndex*LANE_HEIGHT)+'px';
+    el.style.background=t.color;
+    el.dataset.id=t.id;
+
+    el.innerHTML =
+      '<div class="resize-left"></div>'+
+      '<input class="title-input bg-transparent w-full text-white font-semibold outline-none" value="'+escapeHtml(t.title)+'">'+
+      '<div class="text-xs">'+t.start+' - '+t.end+'</div>'+
+      '<button class="del-btn text-xs bg-white bg-opacity-40 px-1 rounded">删除</button>'+
+      '<div class="resize-right"></div>';
+
+    track.appendChild(el);
+
+    const input=el.querySelector('.title-input');
+    input.addEventListener('input',ev=>{
+      const idx=tasks.findIndex(x=>x.id===t.id);
+      if(idx>=0){ tasks[idx].title=ev.target.value; saveForDate(date); }
+    });
+
+    const delBtn=el.querySelector('.del-btn');
+    delBtn.addEventListener('click',ev=>{
+      ev.stopPropagation();
+      tasks=tasks.filter(x=>x.id!==t.id);
+      saveForDate(date); renderTasks();
+    });
+
+    // 拖动任务
+    el.addEventListener('pointerdown',ev=>{
+      if(ev.target.classList.contains('resize-left')||
+         ev.target.classList.contains('resize-right')||
+         ev.target.classList.contains('del-btn')||
+         ev.target.closest('input')) return;
+      ev.preventDefault();
+      const rect=track.getBoundingClientRect();
+      const startX=ev.clientX-rect.left;
+      dragState={type:'move',id:t.id,startX,origStart:timeToPx(t.start),origEnd:timeToPx(t.end)};
+      ev.target.setPointerCapture && ev.target.setPointerCapture(ev.pointerId);
+    });
+
+    // 左右缩放
+    el.querySelector('.resize-left').addEventListener('pointerdown',ev=>{
+      ev.preventDefault();
+      const rect=track.getBoundingClientRect();
+      dragState={type:'resize-left',id:t.id,startX:ev.clientX-rect.left,
+                 origStart:timeToPx(t.start),origEnd:timeToPx(t.end)};
+      ev.target.setPointerCapture && ev.target.setPointerCapture(ev.pointerId);
+    });
+
+    el.querySelector('.resize-right').addEventListener('pointerdown',ev=>{
+      ev.preventDefault();
+      const rect=track.getBoundingClientRect();
+      dragState={type:'resize-right',id:t.id,startX:ev.clientX-rect.left,
+                 origStart:timeToPx(t.start),origEnd:timeToPx(t.end)};
+      ev.target.setPointerCapture && ev.target.setPointerCapture(ev.pointerId);
+    });
+  });
+
+  track.style.height=(lanes.length*LANE_HEIGHT+60)+'px';
+  taskCount.textContent=tasks.length;
+  updateNowLine(); 
+}
+
+// 拖动逻辑
+track.addEventListener('pointermove',ev=>{
+  if(!dragState) return;
+  const rect=track.getBoundingClientRect();
+  const x=ev.clientX-rect.left;
+  const t=tasks.find(t=>t.id===dragState.id);
+  if(!t) return;
+  const dx=x-dragState.startX;
+  if(dragState.type==='move'){
+    let newStart=dragState.origStart+dx;
+    let newEnd=dragState.origEnd+dx;
+    newStart=Math.max(0,newStart);
+    newEnd=Math.min(24*HOUR_PX,newEnd);
+    t.start=pxToTime(newStart);
+    t.end=pxToTime(newEnd);
+  }else if(dragState.type==='resize-left'){
+    let newStart=dragState.origStart+dx;
+    newStart=Math.max(0,Math.min(newStart,dragState.origEnd-MIN_WIDTH));
+    t.start=pxToTime(newStart);
+  }else if(dragState.type==='resize-right'){
+    let newEnd=dragState.origEnd+dx;
+    newEnd=Math.min(24*HOUR_PX,Math.max(newEnd,dragState.origStart+MIN_WIDTH));
+    t.end=pxToTime(newEnd);
+  }
+  renderTasks();
+});
+track.addEventListener('pointerup',()=>{ 
+  if(dragState){ saveForDate(date); dragState=null; }
+});
+
+// 点击空白创建任务
+track.addEventListener('click',ev=>{
+  if(ev.target!==track) return;
+  const rect=track.getBoundingClientRect();
+  const x=ev.clientX-rect.left;
+  const startPx=x;
+  const endPx=x+HOUR_PX/2;
+  const newTask={
+    id:Math.random().toString(36).slice(2,8),
+    title:'新任务',
+    start:pxToTime(startPx),
+    end:pxToTime(endPx),
+    color:palette[Math.floor(Math.random()*palette.length)]
+  };
+  tasks.push(newTask);
+  saveForDate(date);
+  renderTasks();
+});
+
+// 日期切换
+document.getElementById('prevDay').onclick=()=>{
+  date=new Date(new Date(date).getTime()-86400000).toISOString().slice(0,10);
+  datePicker.value=date; loadForDate(date);
+};
+document.getElementById('nextDay').onclick=()=>{
+  date=new Date(new Date(date).getTime()+86400000).toISOString().slice(0,10);
+  datePicker.value=date; loadForDate(date);
+};
+datePicker.addEventListener('change',ev=>{
+  date=ev.target.value; loadForDate(date);
+});
+
+// 导出 JSON
+exportBtn.addEventListener('click',()=>{
+  const blob=new Blob([JSON.stringify(tasks,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='timeline-'+date+'.json';
+  a.click();
+});
+
+// ✅ 实时更新红线位置
+function updateNowLine(){
+  const now=new Date();
+  const px=(now.getHours()*60+now.getMinutes()+now.getSeconds()/60)/60*HOUR_PX;
+  nowLine.style.display='block';
+  nowLine.style.left=px+'px';
+}
+setInterval(updateNowLine, 1000);
+
+loadForDate(date);
+updateNowLine();
+</script>
+</body>
+</html>
