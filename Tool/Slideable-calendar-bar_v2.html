@@ -2,7 +2,7 @@
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
-<title>水平日程表（实时红线 + 自由调整 + 可在未来创建）</title>
+<title>水平日程表（实时红线 + 自由调整 + 可在未来创建 + 备注功能）</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
   body { background: #f3f4f6; }
@@ -10,14 +10,21 @@
     position: relative;
     height: 120px;
     user-select: none;
-    background: white; /* ✅ 整条时间线背景改成白色 */
-    min-width: 2400px; /* ✅ 扩展24小时的点击区域 */
+    background: white;
+    min-width: 2400px;
   }
   .task-block {
-    position: absolute; height: 80px; border-radius: 0.5rem;
-    padding: 4px; box-shadow: 0 2px 5px rgba(0,0,0,0.15);
-    cursor: grab; display: flex; flex-direction: column;
-    justify-content: space-between; color: white; font-size: 0.9rem;
+    position: absolute;
+    height: 80px;
+    border-radius: 0.5rem;
+    padding: 4px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+    cursor: grab;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    color: white;
+    font-size: 0.9rem;
   }
   .resize-left, .resize-right {
     position: absolute; top: 0; width: 8px; height: 100%;
@@ -25,9 +32,23 @@
   }
   .resize-left { left: 0; border-top-left-radius: 0.5rem; border-bottom-left-radius: 0.5rem; }
   .resize-right { right: 0; border-top-right-radius: 0.5rem; border-bottom-right-radius: 0.5rem; }
-  .now-line {
-    position: absolute; top: 0; bottom: 0; width: 2px;
-    background: red; z-index: 5; pointer-events: none;
+  .now-line { position: absolute; top: 0; bottom: 0; width: 2px; background: red; z-index: 5; pointer-events: none; }
+
+  /* ✅ 备注弹窗 */
+  .note-modal {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.3);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1000;
+  }
+  .note-box {
+    background: white; padding: 16px; border-radius: 8px;
+    width: 400px; max-width: 90%;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+  }
+  .note-box textarea {
+    width: 100%; height: 200px; resize: none;
+    border: 1px solid #ccc; border-radius: 4px; padding: 6px;
   }
 </style>
 </head>
@@ -52,12 +73,28 @@
   </div>
 </div>
 
+<!-- ✅ 备注弹窗 -->
+<div id="noteModal" class="note-modal hidden">
+  <div class="note-box">
+    <h2 class="text-lg font-semibold mb-2">任务备注</h2>
+    <textarea id="noteInput"></textarea>
+    <div class="mt-3 flex justify-end space-x-2">
+      <button id="closeNote" class="px-3 py-1 bg-gray-300 rounded">取消</button>
+      <button id="saveNote" class="px-3 py-1 bg-blue-500 text-white rounded">保存备注</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const track = document.getElementById('track');
 const scaleWrapper = document.getElementById('scaleWrapper');
 const datePicker = document.getElementById('datePicker');
 const taskCount = document.getElementById('taskCount');
 const exportBtn = document.getElementById('exportBtn');
+const noteModal = document.getElementById('noteModal');
+const noteInput = document.getElementById('noteInput');
+const closeNote = document.getElementById('closeNote');
+const saveNote = document.getElementById('saveNote');
 
 const HOUR_PX = 100;
 const MIN_WIDTH = 10;
@@ -66,12 +103,12 @@ const palette = ["#60A5FA","#34D399","#FBBF24","#F87171","#A78BFA"];
 let tasks = [];
 let date = new Date().toISOString().slice(0,10);
 let dragState = null;
+let editingTaskId = null;
 
-// ✅ 红线初始化
+// ✅ 红线
 let nowLine = document.createElement('div');
 nowLine.className = 'now-line';
 track.appendChild(nowLine);
-nowLine.style.display = 'block';
 
 datePicker.value = date;
 
@@ -85,26 +122,21 @@ for(let i=0;i<24;i++){
 }
 
 // 工具函数
-const timeToPx = t=>{
-  const [h,m]=t.split(':').map(Number);
-  return (h*60+m)/60*HOUR_PX;
-};
-const pxToTime = px=>{
+const timeToPx=t=>{ const [h,m]=t.split(':').map(Number); return (h*60+m)/60*HOUR_PX; };
+const pxToTime=px=>{
   const totalMin = px / HOUR_PX * 60;
   const h = Math.floor(totalMin / 60);
   const m = Math.round(totalMin % 60);
   return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
 };
-const escapeHtml = s=>s.replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const escapeHtml=s=>s.replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 // 存储
 const storageKey = d=>'timeline:'+d;
-const saveForDate = d=>{
-  localStorage.setItem(storageKey(d), JSON.stringify(tasks));
-};
+const saveForDate = d=>localStorage.setItem(storageKey(d), JSON.stringify(tasks));
 const loadForDate = d=>{
-  const raw = localStorage.getItem(storageKey(d));
-  tasks = raw ? JSON.parse(raw) : [];
+  const raw=localStorage.getItem(storageKey(d));
+  tasks=raw?JSON.parse(raw):[];
   renderTasks();
 };
 
@@ -112,22 +144,14 @@ const loadForDate = d=>{
 function renderTasks(){
   track.querySelectorAll('.task-block').forEach(n=>n.remove());
   tasks.sort((a,b)=>timeToPx(a.start)-timeToPx(b.start));
-
-  const lanes=[]; 
-  const LANE_HEIGHT=110; 
-  const BASE_TOP=22;
+  const lanes=[]; const LANE_HEIGHT=110; const BASE_TOP=22;
 
   tasks.forEach(t=>{
-    const left=timeToPx(t.start);
-    const right=timeToPx(t.end);
+    const left=timeToPx(t.start), right=timeToPx(t.end);
     const width=Math.max(MIN_WIDTH,right-left);
-
     let laneIndex=lanes.findIndex(endPx=>left>=endPx+4);
-    if(laneIndex===-1){
-      laneIndex=lanes.length; lanes.push(right);
-    }else{
-      lanes[laneIndex]=right;
-    }
+    if(laneIndex===-1){ laneIndex=lanes.length; lanes.push(right); }
+    else lanes[laneIndex]=right;
 
     const el=document.createElement('div');
     el.className='task-block';
@@ -136,6 +160,7 @@ function renderTasks(){
     el.style.top=(BASE_TOP+laneIndex*LANE_HEIGHT)+'px';
     el.style.background=t.color;
     el.dataset.id=t.id;
+    el.title = t.note ? t.note.slice(0,80).replace(/\n/g,' ') : ''; // ✅ 备注预览
 
     el.innerHTML =
       '<div class="resize-left"></div>'+
@@ -145,6 +170,16 @@ function renderTasks(){
       '<div class="resize-right"></div>';
 
     track.appendChild(el);
+
+    el.addEventListener('click',ev=>{
+      if(ev.target.classList.contains('resize-left')||
+         ev.target.classList.contains('resize-right')||
+         ev.target.classList.contains('del-btn')||
+         ev.target.closest('input')) return;
+      editingTaskId=t.id;
+      noteInput.value=t.note||'';
+      noteModal.classList.remove('hidden');
+    });
 
     const input=el.querySelector('.title-input');
     input.addEventListener('input',ev=>{
@@ -159,12 +194,9 @@ function renderTasks(){
       saveForDate(date); renderTasks();
     });
 
-    // 拖动任务
+    // 拖动
     el.addEventListener('pointerdown',ev=>{
-      if(ev.target.classList.contains('resize-left')||
-         ev.target.classList.contains('resize-right')||
-         ev.target.classList.contains('del-btn')||
-         ev.target.closest('input')) return;
+      if(ev.target.classList.contains('resize-left')||ev.target.classList.contains('resize-right')||ev.target.closest('input')) return;
       ev.preventDefault();
       const rect=track.getBoundingClientRect();
       const startX=ev.clientX-rect.left;
@@ -176,23 +208,19 @@ function renderTasks(){
     el.querySelector('.resize-left').addEventListener('pointerdown',ev=>{
       ev.preventDefault();
       const rect=track.getBoundingClientRect();
-      dragState={type:'resize-left',id:t.id,startX:ev.clientX-rect.left,
-                 origStart:timeToPx(t.start),origEnd:timeToPx(t.end)};
+      dragState={type:'resize-left',id:t.id,startX:ev.clientX-rect.left,origStart:timeToPx(t.start),origEnd:timeToPx(t.end)};
       ev.target.setPointerCapture && ev.target.setPointerCapture(ev.pointerId);
     });
-
     el.querySelector('.resize-right').addEventListener('pointerdown',ev=>{
       ev.preventDefault();
       const rect=track.getBoundingClientRect();
-      dragState={type:'resize-right',id:t.id,startX:ev.clientX-rect.left,
-                 origStart:timeToPx(t.start),origEnd:timeToPx(t.end)};
+      dragState={type:'resize-right',id:t.id,startX:ev.clientX-rect.left,origStart:timeToPx(t.start),origEnd:timeToPx(t.end)};
       ev.target.setPointerCapture && ev.target.setPointerCapture(ev.pointerId);
     });
   });
-
   track.style.height=(lanes.length*LANE_HEIGHT+60)+'px';
   taskCount.textContent=tasks.length;
-  updateNowLine(); 
+  updateNowLine();
 }
 
 // 拖动逻辑
@@ -204,12 +232,9 @@ track.addEventListener('pointermove',ev=>{
   if(!t) return;
   const dx=x-dragState.startX;
   if(dragState.type==='move'){
-    let newStart=dragState.origStart+dx;
-    let newEnd=dragState.origEnd+dx;
-    newStart=Math.max(0,newStart);
-    newEnd=Math.min(24*HOUR_PX,newEnd);
-    t.start=pxToTime(newStart);
-    t.end=pxToTime(newEnd);
+    let newStart=dragState.origStart+dx, newEnd=dragState.origEnd+dx;
+    newStart=Math.max(0,newStart); newEnd=Math.min(24*HOUR_PX,newEnd);
+    t.start=pxToTime(newStart); t.end=pxToTime(newEnd);
   }else if(dragState.type==='resize-left'){
     let newStart=dragState.origStart+dx;
     newStart=Math.max(0,Math.min(newStart,dragState.origEnd-MIN_WIDTH));
@@ -221,41 +246,22 @@ track.addEventListener('pointermove',ev=>{
   }
   renderTasks();
 });
-track.addEventListener('pointerup',()=>{ 
-  if(dragState){ saveForDate(date); dragState=null; }
-});
+track.addEventListener('pointerup',()=>{ if(dragState){ saveForDate(date); dragState=null; } });
 
-// 点击空白创建任务（✅ 未来也可点击）
+// 点击空白创建任务
 track.addEventListener('click',ev=>{
   if(ev.target!==track) return;
   const rect=track.getBoundingClientRect();
   const x=ev.clientX-rect.left;
-  const startPx=x;
-  const endPx=x+HOUR_PX/2;
-  const newTask={
-    id:Math.random().toString(36).slice(2,8),
-    title:'新任务',
-    start:pxToTime(startPx),
-    end:pxToTime(endPx),
-    color:palette[Math.floor(Math.random()*palette.length)]
-  };
-  tasks.push(newTask);
-  saveForDate(date);
-  renderTasks();
+  const startPx=x, endPx=x+HOUR_PX/2;
+  const newTask={id:Math.random().toString(36).slice(2,8),title:'新任务',start:pxToTime(startPx),end:pxToTime(endPx),color:palette[Math.floor(Math.random()*palette.length)],note:''};
+  tasks.push(newTask); saveForDate(date); renderTasks();
 });
 
 // 日期切换
-document.getElementById('prevDay').onclick=()=>{
-  date=new Date(new Date(date).getTime()-86400000).toISOString().slice(0,10);
-  datePicker.value=date; loadForDate(date);
-};
-document.getElementById('nextDay').onclick=()=>{
-  date=new Date(new Date(date).getTime()+86400000).toISOString().slice(0,10);
-  datePicker.value=date; loadForDate(date);
-};
-datePicker.addEventListener('change',ev=>{
-  date=ev.target.value; loadForDate(date);
-});
+document.getElementById('prevDay').onclick=()=>{ date=new Date(new Date(date).getTime()-86400000).toISOString().slice(0,10); datePicker.value=date; loadForDate(date); };
+document.getElementById('nextDay').onclick=()=>{ date=new Date(new Date(date).getTime()+86400000).toISOString().slice(0,10); datePicker.value=date; loadForDate(date); };
+datePicker.addEventListener('change',ev=>{ date=ev.target.value; loadForDate(date); });
 
 // 导出 JSON
 exportBtn.addEventListener('click',()=>{
@@ -266,14 +272,21 @@ exportBtn.addEventListener('click',()=>{
   a.click();
 });
 
-// ✅ 实时红线更新
+// 红线
 function updateNowLine(){
   const now=new Date();
   const px=(now.getHours()*60+now.getMinutes()+now.getSeconds()/60)/60*HOUR_PX;
-  nowLine.style.display='block';
   nowLine.style.left=px+'px';
 }
-setInterval(updateNowLine, 1000);
+setInterval(updateNowLine,1000);
+
+// ✅ 备注弹窗逻辑
+closeNote.onclick=()=>{ noteModal.classList.add('hidden'); };
+saveNote.onclick=()=>{
+  const t=tasks.find(x=>x.id===editingTaskId);
+  if(t){ t.note=noteInput.value; saveForDate(date); renderTasks(); }
+  noteModal.classList.add('hidden');
+};
 
 loadForDate(date);
 updateNowLine();
