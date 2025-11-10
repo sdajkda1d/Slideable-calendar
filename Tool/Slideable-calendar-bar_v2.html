@@ -2,10 +2,17 @@
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
-<title>水平日程表（实时红线 + 自由调整）</title>
+<title>水平日程表（实时红线 + 自由调整 + 可在未来创建）</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
-  .timeline-track { position: relative; height: 120px; user-select: none; }
+  body { background: #f3f4f6; }
+  .timeline-track {
+    position: relative;
+    height: 120px;
+    user-select: none;
+    background: white; /* ✅ 整条时间线背景改成白色 */
+    min-width: 2400px; /* ✅ 扩展24小时的点击区域 */
+  }
   .task-block {
     position: absolute; height: 80px; border-radius: 0.5rem;
     padding: 4px; box-shadow: 0 2px 5px rgba(0,0,0,0.15);
@@ -20,11 +27,11 @@
   .resize-right { right: 0; border-top-right-radius: 0.5rem; border-bottom-right-radius: 0.5rem; }
   .now-line {
     position: absolute; top: 0; bottom: 0; width: 2px;
-    background: red; z-index: 5; pointer-events: none; /* ✅ 不影响点击事件 */
+    background: red; z-index: 5; pointer-events: none;
   }
 </style>
 </head>
-<body class="p-4 bg-gray-100">
+<body class="p-4">
 
 <div class="flex items-center justify-between mb-2">
   <div class="space-x-2">
@@ -38,10 +45,10 @@
   </div>
 </div>
 
-<div class="border rounded overflow-auto">
+<div class="border rounded overflow-auto bg-white">
   <div class="relative p-4">
-    <div id="scaleWrapper" class="absolute left-0 top-0 right-0 h-6 border-b border-gray-300 flex"></div>
-    <div id="track" class="timeline-track mt-8 bg-white rounded"></div>
+    <div id="scaleWrapper" class="absolute left-0 top-0 right-0 h-6 border-b border-gray-300 flex bg-white"></div>
+    <div id="track" class="timeline-track mt-8"></div>
   </div>
 </div>
 
@@ -218,7 +225,7 @@ track.addEventListener('pointerup',()=>{
   if(dragState){ saveForDate(date); dragState=null; }
 });
 
-// 点击空白创建任务
+// 点击空白创建任务（✅ 未来也可点击）
 track.addEventListener('click',ev=>{
   if(ev.target!==track) return;
   const rect=track.getBoundingClientRect();
@@ -259,7 +266,7 @@ exportBtn.addEventListener('click',()=>{
   a.click();
 });
 
-// ✅ 实时更新红线位置
+// ✅ 实时红线更新
 function updateNowLine(){
   const now=new Date();
   const px=(now.getHours()*60+now.getMinutes()+now.getSeconds()/60)/60*HOUR_PX;
