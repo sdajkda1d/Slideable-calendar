@@ -1,3 +1,10 @@
+Horizontal Timeline Schedule (Pure Static HTML + JS, Tailwind CDN)
+Description:
+- Simply open the draggable schedule APP.html to run it in your browser (no build required).
+- Using Tailwind Play CDN (https://cdn.tailwindcss.com), styles will load correctly when there is a network connection.
+- Features: Horizontal timeline (00:00-24:00), create/delete/drag/stretch tasks, date switching, saving by date to localStorage (key=timeline:YYYY-MM-DD).
+- Export: Can export today's tasks as a JSON file.
+
 水平时间轴日程（纯静态 HTML + JS，Tailwind CDN）
 说明：
 - 直接打开 可拖动日程APP.html 即可在浏览器中运行（无需构建）。
