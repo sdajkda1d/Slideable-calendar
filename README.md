@@ -5,8 +5,9 @@
 
   
 <div style="text-align: center;">
-  <img src="https://github.com/user-attachments/assets/d4498a97-c07a-4389-b478-c5f4a0fea37a" alt="image" width="800"/>
+  <img width="1571" height="488" alt="image" src="https://github.com/user-attachments/assets/19d6a765-dc37-4699-a0d0-3f383148ce74" />
 </div>
+
 
   
 &ensp;Project Background:   
