@@ -14,7 +14,7 @@
 &ensp;Due to my lack of planning in my work, colleagues often put aside their current tasks to address new requirements, resulting in none of the tasks being completed. I hope to have a draggable timeline for scheduling events. Although this feature already exists in mobile  calendars, I don't want to constantly adjust things on my phone. I want to implement this feature on my computer, allowing me to schedule my tasks into a daily timeline.  
 
 &emsp;项目背景 :loud_sound: ：  
-&emsp;由于本人工作特别没有规划😂: ，导致同事有新的需求总是放下手里的工作去做新的需求，最后导致所有需求都没有完成 :speech_balloon: ，希望能有一个能拖动时间轴的日程便签，尽管这个功能手机 :iphone: 日历早已实现，但不希望总是用手机调整，希望在电脑上实现这个功能，将自己的代办排进每日的时间轴日程里面。  
+&emsp;由于本人工作特别没有规划😂，导致同事有新的需求总是放下手里的工作去做新的需求，最后导致所有需求都没有完成 :speech_balloon: ，希望能有一个能拖动时间轴的日程便签，尽管这个功能手机 :iphone: 日历早已实现，但不希望总是用手机调整，希望在电脑上实现这个功能，将自己的代办排进每日的时间轴日程里面。  
 
 &ensp;The following features are expected to be included:  
 &ensp;1. 24-hour horizontal timeline display. Double-click to create a new event. The start and end times of each event can be changed by dragging (and the start/end times are displayed in real-time).  
