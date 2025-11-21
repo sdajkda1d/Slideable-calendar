@@ -1,4 +1,4 @@
-# Slideable-calendar :memo:
+# Slideable-calendar 可滑动日程表 :memo:
 &ensp;This project aims to provide a swipeable schedule note-taking software for recording tasks and to-dos completed in each time period of the day. It features parallel scheduling capabilities, supports time accuracy down to the minute, cross-date scheduling, and allows users to add notes by name.  
 
 &emsp;本项目旨在提供一款可滑动操作的日程安排笔记软件，用于记录一天中各个时间段完成的任务和待办事项。它具备并行日程安排功能，支持精确到分钟的时间设置、跨日期日程安排，并允许用户按名称添加笔记 :memo: 。  
